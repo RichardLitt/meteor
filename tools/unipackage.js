@@ -343,6 +343,7 @@ _.extend(Unipackage.prototype, {
 
     var chosenArch = archinfo.mostSpecificMatch(
       arch, _.pluck(self.unibuilds, 'arch'));
+
     if (! chosenArch) {
       buildmessage.error(
         (self.name || "this app") +

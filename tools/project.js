@@ -22,9 +22,9 @@ var trimLine = function (line) {
   return line;
 };
 
-// Given a set of lines, each of the form "foo@bar", return an array of form
-// [{packageName: foo, versionConstraint: bar}]. If there is bar,
-// versionConstraint is null.
+// Given a set of lines, each of the form "foo@bar", return an object of form
+// {foo: "bar", bar: null}. If there is "bar", value of the corresponding key is
+// null.
 var processPerConstraintLines = function(lines) {
   var ret = {};
 

@@ -51,19 +51,19 @@
 // really the build tool can lay out the star however it wants.
 //
 //
-// == Format of a program when arch is "browser.*" ==
+// == Format of a program when arch is "client.*" ==
 //
 // Standard:
 //
 // /program.json
 //
-//  - format: "browser-program-pre1" for this version
+//  - format: "client-program-pre1" for this version
 //
 //  - manifest: array of resources to serve with HTTP, each an object:
 //    - path: path of file relative to program.json
 //    - where: "client"
 //    - type: "js", "css", or "asset"
-//    - cacheable: is it safe to ask the browser to cache this file (boolean)
+//    - cacheable: is it safe to ask the client to cache this file (boolean)
 //    - url: relative url to download the resource, includes cache busting
 //        parameter when used
 //    - size: size of file in bytes
@@ -387,7 +387,7 @@ var Target = function (options) {
   // PackageLoader to use for resolving package dependenices.
   self.packageLoader = options.packageLoader;
 
-  // Something like "browser.w3c" or "os" or "os.osx.x86_64"
+  // Something like "client.w3c" or "os" or "os.osx.x86_64"
   self.arch = options.arch;
 
   // All of the Unibuilds that are to go into this target, in the order
@@ -411,7 +411,7 @@ var Target = function (options) {
   self.nodeModulesDirectories = {};
 
   // Static assets to include in the bundle. List of File.
-  // For browser targets, these are served over HTTP.
+  // For client targets, these are served over HTTP.
   self.asset = [];
 };
 
@@ -576,7 +576,7 @@ _.extend(Target.prototype, {
   _emitResources: function () {
     var self = this;
 
-    var isBrowser = archinfo.matches(self.arch, "browser");
+    var isClient = archinfo.matches(self.arch, "client");
     var isOs = archinfo.matches(self.arch, "os");
 
     // Copy their resources into the bundle in order
@@ -604,7 +604,7 @@ _.extend(Target.prototype, {
               : stripLeadingSlash(resource.servePath);
         f.setTargetPathFromRelPath(relPath);
 
-        if (isBrowser)
+        if (isClient)
           f.setUrlFromRelPath(resource.servePath);
         else {
           unibuildAssets[resource.path] = resource.data;
@@ -619,7 +619,7 @@ _.extend(Target.prototype, {
           return;  // already handled
 
         if (_.contains(["js", "css"], resource.type)) {
-          if (resource.type === "css" && ! isBrowser)
+          if (resource.type === "css" && ! isClient)
             // XXX might be nice to throw an error here, but then we'd
             // have to make it so that package.js ignores css files
             // that appear in the server directories in an app tree
@@ -633,7 +633,7 @@ _.extend(Target.prototype, {
           var relPath = stripLeadingSlash(resource.servePath);
           f.setTargetPathFromRelPath(relPath);
 
-          if (isBrowser) {
+          if (isClient) {
             f.setUrlFromRelPath(resource.servePath);
           }
 
@@ -670,8 +670,8 @@ _.extend(Target.prototype, {
         }
 
         if (_.contains(["head", "body"], resource.type)) {
-          if (! isBrowser)
-            throw new Error("HTML segments can only go to the browser");
+          if (! isClient)
+            throw new Error("HTML segments can only go to the client");
           self[resource.type].push(resource.data);
           return;
         }
@@ -757,8 +757,8 @@ var ClientTarget = function (options) {
   self.head = [];
   self.body = [];
 
-  if (! archinfo.matches(self.arch, "browser"))
-    throw new Error("ClientTarget targeting something that isn't a browser?");
+  if (! archinfo.matches(self.arch, "client"))
+    throw new Error("ClientTarget targeting something that isn't a client?");
 };
 
 util.inherits(ClientTarget, Target);
@@ -950,7 +950,7 @@ _.extend(ClientTarget.prototype, {
 
     // Control file
     builder.writeJson('program.json', {
-      format: "browser-program-pre1",
+      format: "client-program-pre1",
       manifest: manifest
     });
     return "program.json";
@@ -1293,7 +1293,7 @@ var JsImageTarget = function (options) {
   Target.apply(this, arguments);
 
   if (! archinfo.matches(self.arch, "os"))
-    // Conceivably we could support targeting the browser as long as
+    // Conceivably we could support targeting the client as long as
     // no native node modules were used.  No use case for that though.
     throw new Error("JsImageTarget targeting something unusual?");
 };
@@ -1626,7 +1626,9 @@ var writeSiteArchive = function (targets, outputPath, options) {
  *
  * - buildOptions: may include
  *   - minify: minify the CSS and JS assets (boolean, default false)
- *   - arch: the server architecture to target (defaults to archinfo.host())
+ *   - serverArch: the server architecture to target
+ *                   (defaults to archinfo.host())
+ *   - clientArchs: an array of client archs to target
  *
  * Returns an object with keys:
  * - errors: A buildmessage.MessageSet, or falsy if bundling succeeded.
@@ -1655,12 +1657,13 @@ exports.bundle = function (options) {
   if (! release.usingRightReleaseForApp(appDir))
     throw new Error("running wrong release for app?");
 
-  var arch = buildOptions.arch || archinfo.host();
+  var serverArch = buildOptions.serverArch || archinfo.host();
+  var clientArchs = buildOptions.clientArchs || [ "client.browser" ];
 
   var appDir = project.project.rootDir;
   var packageLoader = project.project.getPackageLoader();
   var downloaded = project.project._ensurePackagesExistOnDisk(
-    project.project.dependencies, { arch: arch, verbose: true });
+    project.project.dependencies, { arch: serverArch, verbose: true });
 
   if (_.keys(downloaded).length !==
       _.keys(project.project.dependencies).length) {
@@ -1685,10 +1688,10 @@ exports.bundle = function (options) {
   }, function () {
     var controlProgram = null;
 
-    var makeClientTarget = function (app) {
+    var makeClientTarget = function (app, clientArch) {
       var client = new ClientTarget({
         packageLoader: packageLoader,
-        arch: "browser"
+        arch: clientArch
       });
 
       client.make({
@@ -1703,7 +1706,7 @@ exports.bundle = function (options) {
     var makeBlankClientTarget = function () {
       var client = new ClientTarget({
         packageLoader: packageLoader,
-        arch: "browser"
+        arch: "client.browser"
       });
       client.make({
         minify: buildOptions.minify,
@@ -1716,7 +1719,7 @@ exports.bundle = function (options) {
     var makeServerTarget = function (app, clientTarget) {
       var targetOptions = {
         packageLoader: packageLoader,
-        arch: arch,
+        arch: serverArch,
         releaseName: releaseName
       };
       if (clientTarget)
@@ -1746,12 +1749,22 @@ exports.bundle = function (options) {
         appDir, exports.ignoreFiles);
 
       // Client
-      var client = makeClientTarget(app);
-      targets.client = client;
+      _.each(clientArchs, function (arch) {
+        var client = makeClientTarget(app, arch);
+        targets[arch] = client;
+      });
 
       // Server
-      var server = options.cachedServerTarget || makeServerTarget(app, client);
-      server.clientTarget = client;
+      var browserClient = targets["client.browser"];
+
+      if (! browserClient) {
+        browserClient = makeBlankClientTarget(app);
+        targets["client.browser"] = browserClient;
+      }
+
+      var server = options.cachedServerTarget ||
+                   makeServerTarget(app, browserClient);
+      server.clientTarget = browserClient;
       targets.server = server;
     }
 
